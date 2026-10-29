@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
@@ -8,7 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Xml;
 using AXE.PackagingTool.Models;
 using AXE.PackagingTool.ViewModels;
@@ -17,6 +17,8 @@ namespace AXE.PackagingTool.Core;
 
 public class DynamicPackageBuilder
 {
+	private static readonly ConcurrentDictionary<string, (string XmlField, string SourceField)[]> FieldConfigCache = new ConcurrentDictionary<string, (string, string)[]>(StringComparer.Ordinal);
+
 	private readonly IProgress<(int Percent, string Message)> _progress;
 
 	private readonly Action<string, LogLevel, string, string, string> _log;
@@ -164,16 +166,11 @@ public class DynamicPackageBuilder
 		xmlWriter.WriteStartElement("simpledc");
 		xmlWriter.WriteAttributeString("xsi", "noNamespaceSchemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "../../schemas/EAD.xsd");
 		string name = type + "_ProfileFields";
-		string text = ConfigurationManager.AppSettings[name];
-		if (!string.IsNullOrEmpty(text))
+		(string XmlField, string SourceField)[] fields = GetConfiguredFields(name);
+		if (fields.Length > 0)
 		{
-			text = Regex.Replace(text, "<!--.*?-->", "", RegexOptions.Singleline);
-			foreach (string item in from m in text.Split(',')
-				select m.Trim())
+			foreach ((string text2, string field) in fields)
 			{
-				string[] array = item.Split(':');
-				string text2 = array[0].Trim();
-				string field = ((array.Length > 1) ? array[1].Trim() : text2);
 				string value = GetMetaByConfigName(profile.Metadata, field);
 				if (string.IsNullOrEmpty(value) && text2.Equals("title", StringComparison.OrdinalIgnoreCase))
 				{
@@ -278,11 +275,7 @@ public class DynamicPackageBuilder
 				}
 			}
 			string fieldsSuffix = text2 == "EAD_media_" ? "_MediaFields" : text2 == "EAD_pic_" ? "_PictureFields" : "_DocumentFields";
-			string fieldConfig = ConfigurationManager.AppSettings[type + fieldsSuffix] ?? "";
-			fieldConfig = Regex.Replace(fieldConfig, "<!--.*?-->", "", RegexOptions.Singleline);
-			List<string>? list = !string.IsNullOrWhiteSpace(fieldConfig)
-				? fieldConfig.Split(',').Select(field => field.Trim()).Where(field => field.Length > 0).ToList()
-				: null;
+			(string XmlField, string SourceField)[] fields = GetConfiguredFields(type + fieldsSuffix);
 			string text3 = text2 + safeFileName + ".xml";
 			hashSet.Add(text3);
 			using Stream output = CreateTrackedOutput(archive, "representations/rep1/metadata/descriptive/" + text3, metadataFileInfo);
@@ -295,13 +288,10 @@ public class DynamicPackageBuilder
 			xmlWriter.WriteStartElement("simpledc");
 			string docSchema = text2.StartsWith("EAD_media_", StringComparison.Ordinal) ? "EAD_media.xsd" : text2.StartsWith("EAD_pic_", StringComparison.Ordinal) ? "EAD_pic.xsd" : "EAD_doc.xsd";
 			xmlWriter.WriteAttributeString("xsi", "noNamespaceSchemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "../../../../schemas/" + docSchema);
-			if (list != null)
+			if (fields.Length > 0)
 			{
-				foreach (string item in list)
+				foreach ((string text4, string field) in fields)
 				{
-					string[] array = item.Split(':');
-					string text4 = array[0].Trim();
-					string field = ((array.Length > 1) ? array[1].Trim() : text4);
 					string value2 = GetMetaByConfigName(document.Metadata, field);
 					if (string.IsNullOrEmpty(value2) && text4.Equals("docId", StringComparison.OrdinalIgnoreCase))
 					{
@@ -346,6 +336,33 @@ public class DynamicPackageBuilder
 			return meta[text];
 		}
 		return "";
+	}
+
+	private static (string XmlField, string SourceField)[] GetConfiguredFields(string settingName)
+	{
+		string rawConfig = ConfigurationManager.AppSettings[settingName] ?? "";
+		if (string.IsNullOrWhiteSpace(rawConfig))
+			return Array.Empty<(string, string)>();
+
+		string cacheKey = settingName + "\0" + rawConfig;
+		return FieldConfigCache.GetOrAdd(cacheKey, static key =>
+		{
+			int separator = key.IndexOf('\0');
+			string value = key.Substring(separator + 1);
+			List<(string XmlField, string SourceField)> fields = new List<(string, string)>();
+			foreach (string item in value.Split(','))
+			{
+				string fieldConfig = item.Trim();
+				if (fieldConfig.Length == 0)
+					continue;
+				int colon = fieldConfig.IndexOf(':');
+				string xmlField = colon >= 0 ? fieldConfig.Substring(0, colon).Trim() : fieldConfig;
+				string sourceField = colon >= 0 ? fieldConfig.Substring(colon + 1).Trim() : xmlField;
+				if (xmlField.Length > 0)
+					fields.Add((xmlField, sourceField));
+			}
+			return fields.ToArray();
+		});
 	}
 
 	private void AddMetsMapSIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes)

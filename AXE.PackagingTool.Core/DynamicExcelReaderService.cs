@@ -67,6 +67,7 @@ public class DynamicExcelReaderService
 				int groupColIndex = dictionary2.FirstOrDefault((KeyValuePair<int, string> x) => x.Value == groupingColumn).Key;
 				int num = 0;
 				List<DataRow> list2 = new List<DataRow>();
+				Dictionary<DataRow, int> rowIndexes = new Dictionary<DataRow, int>();
 				for (int num2 = 3; num2 < dataTable.Rows.Count; num2++)
 				{
 					DataRow dataRow = dataTable.Rows[num2];
@@ -91,6 +92,7 @@ public class DynamicExcelReaderService
 					{
 						num = 0;
 						list2.Add(dataRow);
+						rowIndexes[dataRow] = num2 + 1;
 					}
 				}
 				foreach (IGrouping<string, DataRow> item in from r in list2
@@ -116,7 +118,7 @@ public class DynamicExcelReaderService
 					foreach (DataRow item3 in item)
 					{
 						DocumentDTO documentDTO = new DocumentDTO();
-						documentDTO.ExcelRowIndex = item3.Table.Rows.IndexOf(item3) + 1;
+						documentDTO.ExcelRowIndex = rowIndexes[item3];
 						foreach (KeyValuePair<int, string> item4 in dictionary3)
 						{
 							if (string.IsNullOrEmpty(item4.Value) || !(item4.Value != "#VALUE!"))

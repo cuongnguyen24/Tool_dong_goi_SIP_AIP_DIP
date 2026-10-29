@@ -19,6 +19,7 @@ internal static class PackageContentValidator
 	{
 		List<string> errors = new List<string>();
 		Dictionary<string, ZipArchiveEntry> entries = archive.Entries.ToDictionary(e => Normalize(e.FullName), StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, XmlSchemaSet> compiledSchemas = new Dictionary<string, XmlSchemaSet>(StringComparer.OrdinalIgnoreCase);
 		foreach (string requiredSchema in new[] { "schemas/METS.xsd", "schemas/xlink.xsd", "schemas/EAD.xsd" })
 			if (!entries.ContainsKey(requiredSchema))
 				errors.Add($"Thiếu schema bắt buộc trong ZIP: {requiredSchema}");
@@ -45,7 +46,7 @@ internal static class PackageContentValidator
 				string path = Normalize(entry.FullName);
 				string schemaName = GetSchemaName(path);
 				if (schemaName != null)
-					ValidateAgainstSchema(xml, entries, schemaName, path, errors);
+					ValidateAgainstSchema(xml, entries, compiledSchemas, schemaName, path, errors);
 
 				ValidateSchemaReferences(xml, path, entries, errors);
 				if (path.EndsWith("EAD.xml", StringComparison.OrdinalIgnoreCase) || path.Contains("EAD_doc_", StringComparison.OrdinalIgnoreCase) || path.Contains("EAD_pic_", StringComparison.OrdinalIgnoreCase) || path.Contains("EAD_media_", StringComparison.OrdinalIgnoreCase))
@@ -107,7 +108,7 @@ internal static class PackageContentValidator
 		}
 	}
 
-	private static void ValidateAgainstSchema(XDocument document, Dictionary<string, ZipArchiveEntry> entries, string schemaName, string xmlPath, List<string> errors)
+	private static void ValidateAgainstSchema(XDocument document, Dictionary<string, ZipArchiveEntry> entries, Dictionary<string, XmlSchemaSet> compiledSchemas, string schemaName, string xmlPath, List<string> errors)
 	{
 		string schemaPath = "schemas/" + schemaName;
 		if (!entries.TryGetValue(schemaPath, out ZipArchiveEntry? schemaEntry))
@@ -116,23 +117,21 @@ internal static class PackageContentValidator
 			return;
 		}
 
-		XmlSchemaSet schemas = new XmlSchemaSet { XmlResolver = null };
-		using (Stream schemaStream = schemaEntry.Open())
-		using (XmlReader schemaReader = XmlReader.Create(schemaStream, SecureReaderSettings()))
-			schemas.Add(null, schemaReader);
-		schemas.Compile();
+		if (!compiledSchemas.TryGetValue(schemaName, out XmlSchemaSet? schemas))
+		{
+			schemas = new XmlSchemaSet { XmlResolver = null };
+			using (Stream schemaStream = schemaEntry.Open())
+			using (XmlReader schemaReader = XmlReader.Create(schemaStream, SecureReaderSettings()))
+				schemas.Add(null, schemaReader);
+			schemas.Compile();
+			compiledSchemas[schemaName] = schemas;
+		}
 
-		XmlReaderSettings settings = SecureReaderSettings();
-		settings.ValidationType = ValidationType.Schema;
-		settings.Schemas.Add(schemas);
-		settings.ValidationFlags |= XmlSchemaValidationFlags.ReportValidationWarnings;
-		settings.ValidationEventHandler += (sender, e) =>
+		document.Validate(schemas, (sender, e) =>
 		{
 			if (e.Severity == XmlSeverityType.Error)
 				errors.Add($"Schema {schemaPath}, XML {xmlPath}: {e.Message}");
-		};
-		using XmlReader reader = XmlReader.Create(new StringReader(document.ToString(SaveOptions.DisableFormatting)), settings);
-		while (reader.Read()) { }
+		}, addSchemaInfo: false);
 	}
 
 	private static void ValidateSchemaReferences(XDocument xml, string xmlPath, Dictionary<string, ZipArchiveEntry> entries, List<string> errors)
