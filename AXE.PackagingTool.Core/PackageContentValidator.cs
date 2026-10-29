@@ -15,7 +15,7 @@ internal static class PackageContentValidator
 	private const string MetsNamespace = "http://www.loc.gov/METS/";
 	private const string XlinkNamespace = "http://www.w3.org/1999/xlink";
 
-	public static void Validate(ZipArchive archive, AXE.PackagingTool.Models.ProfileDTO profile, Action<string> log)
+	public static void Validate(ZipArchive archive, AXE.PackagingTool.Models.ProfileDTO profile, AXE.PackagingTool.Models.PackageType packageType, Action<string> log)
 	{
 		List<string> errors = new List<string>();
 		Dictionary<string, ZipArchiveEntry> entries = archive.Entries.ToDictionary(e => Normalize(e.FullName), StringComparer.OrdinalIgnoreCase);
@@ -49,7 +49,10 @@ internal static class PackageContentValidator
 
 				ValidateSchemaReferences(xml, path, entries, errors);
 				if (path.EndsWith("EAD.xml", StringComparison.OrdinalIgnoreCase) || path.Contains("EAD_doc_", StringComparison.OrdinalIgnoreCase) || path.Contains("EAD_pic_", StringComparison.OrdinalIgnoreCase) || path.Contains("EAD_media_", StringComparison.OrdinalIgnoreCase))
+				{
+					ValidateMetadataFieldNames(xml, path, packageType, errors);
 					ValidateMetadataCodes(xml, path, errors);
+				}
 				if (path.EndsWith("METS.xml", StringComparison.OrdinalIgnoreCase))
 					ValidateMetsReferences(xml, path, entries, errors);
 			}
@@ -195,13 +198,46 @@ internal static class PackageContentValidator
 						errors.Add($"{path}: giá trị <{field}> '{code}' không hợp lệ; giá trị cho phép: {string.Join(", ", allowed)}.");
 		}
 
-		foreach (XElement date in xml.Root.Elements().Where(e => new[] { "startDate", "endDate", "issuedDate", "ngayCap" }.Contains(e.Name.LocalName, StringComparer.OrdinalIgnoreCase)))
+		foreach (XElement date in xml.Root.Elements().Where(e => new[] { "startDate", "endDate", "issuedDate", "requestDate" }.Contains(e.Name.LocalName, StringComparer.OrdinalIgnoreCase)))
 		{
 			string value = date.Value.Trim();
 			if (value.Length > 0 && !new[] { "yyyy-MM-dd", "dd/MM/yyyy", "MM/yyyy", "yyyy-MM", "yyyy" }.Any(format => DateTime.TryParseExact(value, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out _)))
 				errors.Add($"{path}: giá trị ngày <{date.Name.LocalName}> '{value}' không theo định dạng được chấp nhận.");
 		}
 	}
+
+	private static void ValidateMetadataFieldNames(XDocument xml, string path, AXE.PackagingTool.Models.PackageType packageType, List<string> errors)
+	{
+		if (xml.Root == null)
+			return;
+
+		HashSet<string> allowed;
+		if (path.Equals("metadata/descriptive/EAD.xml", StringComparison.OrdinalIgnoreCase))
+		{
+			allowed = packageType switch
+			{
+				AXE.PackagingTool.Models.PackageType.SIP => SplitFields("fileCode,title,maintenance,mode,language,startDate,endDate,keyword,totalDoc,numberOfPaper,numberOfPage,format,inforSign,confidenceLevel,paperFileCode,riskRecovery,riskRecoveryStatus,description"),
+				AXE.PackagingTool.Models.PackageType.AIP => SplitFields("arcFileCode,title,maintenance,mode,language,startDate,endDate,keyword,totalDoc,numberOfPaper,numberOfPage,format,inforSign,confidenceLevel,paperFileCode,riskRecovery,riskRecoveryStatus,description"),
+				_ => SplitFields("requestID,requestDate,purpose,purposeContent,feeObjectType,researchTopic,description")
+			};
+		}
+		else
+		{
+			string identifierField = packageType == AXE.PackagingTool.Models.PackageType.SIP ? "docCode" : "arcDocCode";
+			if (path.Contains("EAD_pic_", StringComparison.OrdinalIgnoreCase))
+				allowed = SplitFields(identifierField + ",maintenance,typePic,archivesNumber,inforSign,eventName,imageTitle,photographer,photoPlace,photoTime,colour,filmSize,docAttached,mode,format,riskRecovery,riskRecoveryStatus,description");
+			else if (path.Contains("EAD_media_", StringComparison.OrdinalIgnoreCase))
+				allowed = SplitFields(identifierField + ",maintenance,typeMedia,archivesNumber,inforSign,eventName,movieTitle,recorder,recordPlace,recordDate,language,playTime,docAttached,mode,quality,format,riskRecovery,riskRecoveryStatus,description");
+			else
+				allowed = SplitFields("docId," + identifierField + ",maintenance,typeName,codeNumber,codeNotation,issuedDate,organName,subject,language,numberOfPage,inforSign,keyword,mode,confidenceLevel,autograph,format,process,riskRecovery,riskRecoveryStatus,description");
+		}
+
+		foreach (XElement field in xml.Root.Elements())
+			if (!allowed.Contains(field.Name.LocalName))
+				errors.Add($"{path}: tên trường <{field.Name.LocalName}> không thuộc cấu trúc metadata {packageType} theo Thông tư 05.");
+	}
+
+	private static HashSet<string> SplitFields(string fields) => new(fields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
 
 	private static string? GetSchemaName(string xmlPath)
 	{

@@ -3,14 +3,34 @@
   <xs:element name="simpledc">
     <xs:complexType>
       <xs:choice minOccurs="1" maxOccurs="unbounded">
-        <xs:element name="fileCode" type="xs:string"/><xs:element name="arcFileCode" type="xs:string"/><xs:element name="title" type="xs:string"/><xs:element name="maintenance" type="xs:string"/>
-        <xs:element name="mode" type="xs:string"/><xs:element name="language" type="xs:string"/><xs:element name="startDate" type="xs:string"/><xs:element name="endDate" type="xs:string"/>
-        <xs:element name="keyword" type="xs:string"/><xs:element name="totalDoc" type="xs:string"/><xs:element name="numberOfPaper" type="xs:string"/><xs:element name="numberOfPage" type="xs:string"/>
-        <xs:element name="format" type="xs:string"/><xs:element name="inforSign" type="xs:string"/><xs:element name="confidenceLevel" type="xs:string"/><xs:element name="paperFileCode" type="xs:string"/>
-        <xs:element name="riskRecovery" type="xs:string"/><xs:element name="riskRecoveryStatus" type="xs:string"/><xs:element name="description" type="xs:string"/>
-        <xs:element name="maXacThuc" type="xs:string"/><xs:element name="tenLuuTru" type="xs:string"/><xs:element name="hoTen" type="xs:string"/><xs:element name="maDinhDanh" type="xs:string"/>
-        <xs:element name="maLuuTruGoc" type="xs:string"/><xs:element name="soKyHieu" type="xs:string"/><xs:element name="loaiTaiLieu" type="xs:string"/><xs:element name="trichYeu" type="xs:string"/>
-        <xs:element name="mucDich" type="xs:string"/><xs:element name="ngayCap" type="xs:string"/><xs:element name="thoiHan" type="xs:string"/><xs:element name="soLuong" type="xs:string"/>
+        <!-- SIP_hoso / AIP_hoso profile metadata -->
+        <xs:element name="fileCode" type="xs:string"/>
+        <xs:element name="arcFileCode" type="xs:string"/>
+        <xs:element name="title" type="xs:string"/>
+        <xs:element name="maintenance" type="xs:string"/>
+        <xs:element name="mode" type="xs:string"/>
+        <xs:element name="language" type="xs:string"/>
+        <xs:element name="startDate" type="xs:string"/>
+        <xs:element name="endDate" type="xs:string"/>
+        <xs:element name="keyword" type="xs:string"/>
+        <xs:element name="totalDoc" type="xs:string"/>
+        <xs:element name="numberOfPaper" type="xs:string"/>
+        <xs:element name="numberOfPage" type="xs:string"/>
+        <xs:element name="format" type="xs:string"/>
+        <xs:element name="inforSign" type="xs:string"/>
+        <xs:element name="confidenceLevel" type="xs:string"/>
+        <xs:element name="paperFileCode" type="xs:string"/>
+        <xs:element name="riskRecovery" type="xs:string"/>
+        <xs:element name="riskRecoveryStatus" type="xs:string"/>
+        <xs:element name="source" type="xs:string"/>
+        <xs:element name="description" type="xs:string"/>
+        <!-- DIP request metadata -->
+        <xs:element name="requestID" type="xs:string"/>
+        <xs:element name="requestDate" type="xs:string"/>
+        <xs:element name="purpose" type="xs:string"/>
+        <xs:element name="purposeContent" type="xs:string"/>
+        <xs:element name="feeObjectType" type="xs:string"/>
+        <xs:element name="researchTopic" type="xs:string"/>
       </xs:choice>
       <xs:anyAttribute processContents="lax"/>
     </xs:complexType>
