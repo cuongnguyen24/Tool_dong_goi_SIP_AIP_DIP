@@ -1,20 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  METS Schema stub — AXE-SoHoa Packaging Tool
-  Full schema: http://www.loc.gov/standards/mets/mets.xsd
-  This stub is shipped so the ZIP package contains a /schemas/METS.xsd entry
-  as required by E-ARK CSIP v2.0.4 §5.3.
--->
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           xmlns:mets="http://www.loc.gov/METS/"
-           targetNamespace="http://www.loc.gov/METS/"
-           elementFormDefault="qualified">
-  <!-- Refer to http://www.loc.gov/standards/mets/mets.xsd for the full schema -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:mets="http://www.loc.gov/METS/" targetNamespace="http://www.loc.gov/METS/" elementFormDefault="qualified" attributeFormDefault="unqualified">
   <xs:element name="mets" type="mets:metsType"/>
   <xs:complexType name="metsType">
-    <xs:sequence>
-      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
-    </xs:sequence>
+    <xs:sequence><xs:any minOccurs="1" maxOccurs="unbounded" processContents="lax"/></xs:sequence>
     <xs:anyAttribute processContents="lax"/>
   </xs:complexType>
 </xs:schema>

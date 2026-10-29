@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- EAD3 stub cho tài liệu văn bản hành chính — AXE-SoHoa Packaging Tool -->
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           xmlns:ead="http://ead3.archivists.org/schema/"
-           targetNamespace="http://ead3.archivists.org/schema/"
-           elementFormDefault="qualified">
-  <xs:element name="ead" type="ead:eadType"/>
-  <xs:complexType name="eadType">
-    <xs:sequence>
-      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
-    </xs:sequence>
-    <xs:anyAttribute processContents="lax"/>
-  </xs:complexType>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:element name="simpledc">
+    <xs:complexType>
+      <xs:choice minOccurs="1" maxOccurs="unbounded">
+        <xs:element name="docId" type="xs:string"/><xs:element name="docCode" type="xs:string"/><xs:element name="arcDocCode" type="xs:string"/><xs:element name="maintenance" type="xs:string"/>
+        <xs:element name="typeName" type="xs:string"/><xs:element name="codeNumber" type="xs:string"/><xs:element name="codeNotation" type="xs:string"/><xs:element name="issuedDate" type="xs:string"/>
+        <xs:element name="organName" type="xs:string"/><xs:element name="subject" type="xs:string"/><xs:element name="language" type="xs:string"/><xs:element name="numberOfPage" type="xs:string"/>
+        <xs:element name="inforSign" type="xs:string"/><xs:element name="keyword" type="xs:string"/><xs:element name="mode" type="xs:string"/><xs:element name="confidenceLevel" type="xs:string"/>
+        <xs:element name="autograph" type="xs:string"/><xs:element name="format" type="xs:string"/><xs:element name="process" type="xs:string"/><xs:element name="riskRecovery" type="xs:string"/>
+        <xs:element name="riskRecoveryStatus" type="xs:string"/><xs:element name="description" type="xs:string"/>
+      </xs:choice>
+      <xs:anyAttribute processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
 </xs:schema>

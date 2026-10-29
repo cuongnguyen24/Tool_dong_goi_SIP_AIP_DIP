@@ -24,11 +24,13 @@
     <None Remove="AXE.PackagingTool.Schemas.EAD_doc.xsd" />
     <None Remove="AXE.PackagingTool.Schemas.EAD_pic.xsd" />
     <None Remove="AXE.PackagingTool.Schemas.EAD_media.xsd" />
+    <None Remove="AXE.PackagingTool.Schemas.xlink.xsd" />
     <EmbeddedResource Include="AXE.PackagingTool.Schemas.METS.xsd" LogicalName="AXE.PackagingTool.Schemas.METS.xsd" />
     <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD.xsd" />
     <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD_doc.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD_doc.xsd" />
     <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD_pic.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD_pic.xsd" />
     <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD_media.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD_media.xsd" />
+    <EmbeddedResource Include="AXE.PackagingTool.Schemas.xlink.xsd" LogicalName="AXE.PackagingTool.Schemas.xlink.xsd" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.102.3" Condition="'$(UseBundledDependencies)' != 'true'" />

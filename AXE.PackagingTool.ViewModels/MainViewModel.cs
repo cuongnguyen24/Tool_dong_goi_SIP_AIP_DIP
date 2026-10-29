@@ -726,7 +726,7 @@ public class MainViewModel : INotifyPropertyChanged
 		}
 		catch (Exception ex2)
 		{
-			Log("❌ Lỗi đóng gói: " + ex2.Message, LogLevel.Error);
+			Log("❌ Lỗi đóng gói: " + ex2, LogLevel.Error);
 			StatusText = "Lỗi đóng gói.";
 		}
 		finally

@@ -5,6 +5,7 @@ using System.Configuration;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -28,6 +29,7 @@ public class DynamicPackageBuilder
 
 	public string Build(ProfileDTO profile, PackageType pkgType, string outputFolder)
 	{
+		string tempPath = "";
 		try
 		{
 			if (profile.Documents.Count > 0 && profile.Documents.All((DocumentDTO d) => !d.IsPdfValid))
@@ -39,10 +41,12 @@ public class DynamicPackageBuilder
 			string text2 = string.Join("_", profile.ProfileCode.Split(Path.GetInvalidFileNameChars()));
 			string text3 = text + "_" + text2;
 			string text4 = Path.Combine(outputFolder, text3 + ".zip");
+			tempPath = text4 + ".tmp";
 			_log("\ud83d\udce6 Bắt đầu đóng gói: " + text3 + ".zip", LogLevel.Info, profile.ProfileCode, "", "");
 			long num = 0L;
 			Dictionary<string, string> dictionary = new Dictionary<string, string>();
-			using (FileStream stream = new FileStream(text4, FileMode.Create))
+			Dictionary<string, (long Size, string Checksum)> metadataFileInfo = new Dictionary<string, (long, string)>(StringComparer.OrdinalIgnoreCase);
+			using (FileStream stream = new FileStream(tempPath, FileMode.Create))
 			{
 				using ZipArchive zipArchive = new ZipArchive(stream, ZipArchiveMode.Create);
 				string text5 = "representations/rep1/data/";
@@ -57,11 +61,7 @@ public class DynamicPackageBuilder
 					zipArchive.CreateEntry("representations/rep1/metadata/preservation/");
 				}
 				zipArchive.CreateEntry("schemas/");
-				zipArchive.CreateEntry("schemas/EAD.xsd");
-				zipArchive.CreateEntry("schemas/EAD_doc.xsd");
-				zipArchive.CreateEntry("schemas/EAD_media.xsd");
-				zipArchive.CreateEntry("schemas/EAD_pic.xsd");
-				zipArchive.CreateEntry("schemas/mets1-12.xsd");
+				AddPackageSchemas(zipArchive, profile);
 				int num2 = 0;
 				HashSet<string> hashSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 				Dictionary<string, string> dictionary2 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -114,8 +114,8 @@ public class DynamicPackageBuilder
 					num += fileInfo.Length;
 					num2++;
 				}
-				AddEadMetadata(zipArchive, text3, text, profile);
-				AddEadMetadataRep(zipArchive, text, profile);
+				AddEadMetadata(zipArchive, text3, text, profile, metadataFileInfo);
+				AddEadMetadataRep(zipArchive, text, profile, metadataFileInfo);
 				switch (text)
 				{
 				case "SIP":
@@ -123,30 +123,38 @@ public class DynamicPackageBuilder
 					AddMetsMapRepSIP(zipArchive, text3, profile, dictionary);
 					break;
 				case "AIP":
-					AddPremisMetadataAIP(zipArchive, text3, profile, dictionary, text);
-					AddMetsMapAIP(zipArchive, text3, profile, dictionary);
-					AddMetsMapRepAIP(zipArchive, text3, profile, dictionary);
+					AddPremisMetadataAIP(zipArchive, text3, profile, dictionary, text, metadataFileInfo);
+					AddMetsMapAIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
+					AddMetsMapRepAIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
 					break;
 				case "DIP":
-					AddPremisMetadataAIP(zipArchive, text3, profile, dictionary, text);
+					AddPremisMetadataAIP(zipArchive, text3, profile, dictionary, text, metadataFileInfo);
 					AddMetsMapDIP(zipArchive, text3, profile, dictionary);
 					AddMetsMapRepDIP(zipArchive, text3, profile, dictionary);
 					break;
 				}
 			}
+			using (FileStream validationStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+			using (ZipArchive validationArchive = new ZipArchive(validationStream, ZipArchiveMode.Read))
+			{
+				PackageContentValidator.Validate(validationArchive, profile, message => _log(message, LogLevel.Success, profile.ProfileCode, "", ""));
+			}
+			File.Move(tempPath, text4, overwrite: true);
 			_log($"✅ Hoàn thành gói {text3} với {dictionary.Count} tài liệu hợp lệ.", LogLevel.Success, profile.ProfileCode, "", "");
 			return text4;
 		}
 		catch (Exception ex)
 		{
-			_log("❌ Lỗi khi đóng gói: " + ex.Message, LogLevel.Error, profile.ProfileCode, "", "");
+			if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath))
+				File.Delete(tempPath);
+			_log("❌ Lỗi khi đóng gói: " + ex, LogLevel.Error, profile.ProfileCode, "", "");
 			throw;
 		}
 	}
 
-	private void AddEadMetadata(ZipArchive archive, string pID, string type, ProfileDTO profile)
+	private void AddEadMetadata(ZipArchive archive, string pID, string type, ProfileDTO profile, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
 	{
-		using Stream output = archive.CreateEntry("metadata/descriptive/EAD.xml").Open();
+		using Stream output = CreateTrackedOutput(archive, "metadata/descriptive/EAD.xml", metadataFileInfo);
 		using XmlWriter xmlWriter = XmlWriter.Create(output, new XmlWriterSettings
 		{
 			Indent = true,
@@ -154,6 +162,7 @@ public class DynamicPackageBuilder
 		});
 		xmlWriter.WriteStartDocument();
 		xmlWriter.WriteStartElement("simpledc");
+		xmlWriter.WriteAttributeString("xsi", "noNamespaceSchemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "../../schemas/EAD.xsd");
 		string name = type + "_ProfileFields";
 		string text = ConfigurationManager.AppSettings[name];
 		if (!string.IsNullOrEmpty(text))
@@ -182,6 +191,7 @@ public class DynamicPackageBuilder
 				{
 					value = "01";
 				}
+				value = Tt05MetadataConverter.Convert(text2, value);
 				xmlWriter.WriteElementString(text2, value);
 			}
 		}
@@ -194,13 +204,57 @@ public class DynamicPackageBuilder
 				{
 					text3 = text3.Substring(0, text3.Length - 2);
 				}
-				xmlWriter.WriteElementString(text3, item2.Value);
+				xmlWriter.WriteElementString(text3, Tt05MetadataConverter.Convert(text3, item2.Value));
 			}
 		}
 		xmlWriter.WriteEndElement();
 	}
 
-	private void AddEadMetadataRep(ZipArchive archive, string type, ProfileDTO profile)
+	private static void AddPackageSchemas(ZipArchive archive, ProfileDTO profile)
+	{
+		AddEmbeddedSchema(archive, "METS", "METS.xsd");
+		AddEmbeddedSchema(archive, "xlink", "xlink.xsd");
+		AddEmbeddedSchema(archive, "EAD", "EAD.xsd");
+
+		HashSet<string> documentSchemaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (DocumentDTO document in profile.Documents.Where((DocumentDTO d) => d.IsPdfValid))
+		{
+			string extension = Path.GetExtension(document.SourcePdfPath).ToLowerInvariant();
+			if (new[] { ".mp3", ".mp4", ".avi", ".wav", ".wmv", ".mov" }.Contains(extension))
+			{
+				documentSchemaNames.Add("EAD_media");
+			}
+			else if (new[] { ".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp" }.Contains(extension))
+			{
+				documentSchemaNames.Add("EAD_pic");
+			}
+			else
+			{
+				documentSchemaNames.Add("EAD_doc");
+			}
+		}
+
+		foreach (string schemaName in documentSchemaNames)
+		{
+			AddEmbeddedSchema(archive, schemaName, schemaName + ".xsd");
+		}
+	}
+
+	private static void AddEmbeddedSchema(ZipArchive archive, string resourceName, string fileName)
+	{
+		string manifestName = "AXE.PackagingTool.Schemas." + resourceName + ".xsd";
+		using Stream? schema = Assembly.GetExecutingAssembly().GetManifestResourceStream(manifestName);
+		if (schema == null || schema.Length == 0)
+		{
+			throw new InvalidDataException("Không tìm thấy schema hoặc schema rỗng: " + manifestName);
+		}
+
+		ZipArchiveEntry entry = archive.CreateEntry("schemas/" + fileName, CompressionLevel.Optimal);
+		using Stream destination = entry.Open();
+		schema.CopyTo(destination);
+	}
+
+	private void AddEadMetadataRep(ZipArchive archive, string type, ProfileDTO profile, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
 	{
 		string name = type + "_DocumentFields";
 		string text = ConfigurationManager.AppSettings[name];
@@ -233,7 +287,7 @@ public class DynamicPackageBuilder
 			}
 			string text3 = text2 + safeFileName + ".xml";
 			hashSet.Add(text3);
-			using Stream output = archive.CreateEntry("representations/rep1/metadata/descriptive/" + text3).Open();
+			using Stream output = CreateTrackedOutput(archive, "representations/rep1/metadata/descriptive/" + text3, metadataFileInfo);
 			using XmlWriter xmlWriter = XmlWriter.Create(output, new XmlWriterSettings
 			{
 				Indent = true,
@@ -241,6 +295,8 @@ public class DynamicPackageBuilder
 			});
 			xmlWriter.WriteStartDocument();
 			xmlWriter.WriteStartElement("simpledc");
+			string docSchema = text2.StartsWith("EAD_media_", StringComparison.Ordinal) ? "EAD_media.xsd" : text2.StartsWith("EAD_pic_", StringComparison.Ordinal) ? "EAD_pic.xsd" : "EAD_doc.xsd";
+			xmlWriter.WriteAttributeString("xsi", "noNamespaceSchemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "../../../../schemas/" + docSchema);
 			if (list != null)
 			{
 				foreach (string item in list)
@@ -257,6 +313,7 @@ public class DynamicPackageBuilder
 					{
 						value2 = "01";
 					}
+					value2 = Tt05MetadataConverter.Convert(text4, value2);
 					xmlWriter.WriteElementString(text4, value2);
 				}
 			}
@@ -264,7 +321,7 @@ public class DynamicPackageBuilder
 			{
 				foreach (KeyValuePair<string, string> item2 in document.Metadata)
 				{
-					xmlWriter.WriteElementString(item2.Key, item2.Value);
+					xmlWriter.WriteElementString(item2.Key, Tt05MetadataConverter.Convert(item2.Key, item2.Value));
 				}
 			}
 			xmlWriter.WriteEndElement();
@@ -300,6 +357,7 @@ public class DynamicPackageBuilder
 		xmlWriter.WriteStartElement("mets", "http://www.loc.gov/METS/");
 		xmlWriter.WriteAttributeString("xmlns", "xsi", null, "http://www.w3.org/2001/XMLSchema-instance");
 		xmlWriter.WriteAttributeString("xmlns", "xlink", null, "http://www.w3.org/1999/xlink");
+		xmlWriter.WriteAttributeString("xsi", "schemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "http://www.loc.gov/METS/ schemas/METS.xsd http://www.w3.org/1999/xlink schemas/xlink.xsd");
 		xmlWriter.WriteAttributeString("OBJID", "uuid-" + Guid.NewGuid().ToString().ToUpper());
 		xmlWriter.WriteAttributeString("LABEL", profile.ProfileCode);
 		xmlWriter.WriteAttributeString("TYPE", "Mixed");
@@ -363,6 +421,8 @@ public class DynamicPackageBuilder
 		xmlWriter.WriteStartDocument();
 		xmlWriter.WriteStartElement("mets", "http://www.loc.gov/METS/");
 		xmlWriter.WriteAttributeString("xmlns", "xlink", null, "http://www.w3.org/1999/xlink");
+		xmlWriter.WriteAttributeString("xmlns", "xsi", null, "http://www.w3.org/2001/XMLSchema-instance");
+		xmlWriter.WriteAttributeString("xsi", "schemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "http://www.loc.gov/METS/ ../../schemas/METS.xsd http://www.w3.org/1999/xlink ../../schemas/xlink.xsd");
 		xmlWriter.WriteAttributeString("OBJID", "uuid-" + Guid.NewGuid().ToString().ToUpper());
 		xmlWriter.WriteAttributeString("LABEL", "Representation 1");
 		xmlWriter.WriteStartElement("fileSec");
@@ -404,61 +464,276 @@ public class DynamicPackageBuilder
 		xmlWriter.WriteEndElement();
 	}
 
-	private void AddPremisMetadataAIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes, string typeTitle)
+	private void AddPremisMetadataAIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes, string typeTitle, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
 	{
 		string[] array = new string[2] { "metadata/preservation/PREMIS.xml", "representations/rep1/metadata/preservation/PREMIS_rep1.xml" };
 		foreach (string entryName in array)
 		{
-			using Stream output = archive.CreateEntry(entryName).Open();
+			using Stream output = CreateTrackedOutput(archive, entryName, metadataFileInfo);
 			using XmlWriter xmlWriter = XmlWriter.Create(output, new XmlWriterSettings
 			{
 				Indent = true
 			});
 			xmlWriter.WriteStartDocument();
-			xmlWriter.WriteStartElement("premis", "http://www.loc.gov/premis/v3");
+			const string premisNs = "http://www.loc.gov/premis/v3";
+			xmlWriter.WriteStartElement("premis", "premis", premisNs);
 			xmlWriter.WriteAttributeString("version", "3.0");
 			foreach (DocumentDTO item in profile.Documents.Where((DocumentDTO d) => d.IsPdfValid))
 			{
 				if (hashes.ContainsKey(item.DocumentCode))
 				{
-					xmlWriter.WriteStartElement("object");
+					xmlWriter.WriteStartElement("premis", "object", premisNs);
 					xmlWriter.WriteAttributeString("type", "file");
-					xmlWriter.WriteStartElement("objectIdentifier");
-					xmlWriter.WriteElementString("objectIdentifierType", "local");
-					xmlWriter.WriteElementString("objectIdentifierValue", item.DocumentCode);
+					xmlWriter.WriteStartElement("premis", "objectIdentifier", premisNs);
+					xmlWriter.WriteElementString("premis", "objectIdentifierType", premisNs, "local");
+					xmlWriter.WriteElementString("premis", "objectIdentifierValue", premisNs, item.DocumentCode);
 					xmlWriter.WriteEndElement();
-					xmlWriter.WriteStartElement("objectCharacteristics");
+					xmlWriter.WriteStartElement("premis", "objectCharacteristics", premisNs);
 					FileInfo fileInfo = new FileInfo(item.SourcePdfPath);
-					xmlWriter.WriteElementString("size", fileInfo.Length.ToString());
-					xmlWriter.WriteStartElement("fixity");
-					xmlWriter.WriteElementString("messageDigestAlgorithm", "SHA256");
-					xmlWriter.WriteElementString("messageDigest", hashes[item.DocumentCode]);
+					xmlWriter.WriteElementString("premis", "size", premisNs, fileInfo.Length.ToString());
+					xmlWriter.WriteStartElement("premis", "fixity", premisNs);
+					xmlWriter.WriteElementString("premis", "messageDigestAlgorithm", premisNs, "SHA-256");
+					xmlWriter.WriteElementString("premis", "messageDigest", premisNs, hashes[item.DocumentCode]);
+					xmlWriter.WriteEndElement();
+					xmlWriter.WriteStartElement("premis", "format", premisNs);
+					xmlWriter.WriteStartElement("premis", "formatDesignation", premisNs);
+					xmlWriter.WriteElementString("premis", "formatName", premisNs, Path.GetExtension(item.SafeFileName).TrimStart('.').ToUpperInvariant());
+					xmlWriter.WriteEndElement();
 					xmlWriter.WriteEndElement();
 					xmlWriter.WriteEndElement();
 					xmlWriter.WriteEndElement();
 				}
 			}
-			xmlWriter.WriteStartElement("event");
-			xmlWriter.WriteStartElement("eventIdentifier");
-			xmlWriter.WriteElementString("eventIdentifierType", "local");
-			xmlWriter.WriteElementString("eventIdentifierValue", Guid.NewGuid().ToString());
+			xmlWriter.WriteStartElement("premis", "event", premisNs);
+			xmlWriter.WriteStartElement("premis", "eventIdentifier", premisNs);
+			xmlWriter.WriteElementString("premis", "eventIdentifierType", premisNs, "local");
+			xmlWriter.WriteElementString("premis", "eventIdentifierValue", premisNs, Guid.NewGuid().ToString().ToUpperInvariant());
 			xmlWriter.WriteEndElement();
-			xmlWriter.WriteElementString("eventType", $"Đóng gói {typeTitle} ({typeTitle} Packaging)");
-			xmlWriter.WriteElementString("eventDateTime", DateTime.Now.ToString("s"));
-			xmlWriter.WriteElementString("eventDetail", "Đóng gói " + typeTitle + " theo Thông tư 05/2025/TT-BNV");
+			xmlWriter.WriteElementString("premis", "eventType", premisNs, $"Đóng gói {typeTitle} ({typeTitle} Packaging)");
+			xmlWriter.WriteElementString("premis", "eventDateTime", premisNs, DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+			xmlWriter.WriteStartElement("premis", "eventDetailInformation", premisNs);
+			xmlWriter.WriteElementString("premis", "eventDetail", premisNs, "Đóng gói " + typeTitle + " theo Thông tư 05/2025/TT-BNV; tạo SHA-256 cho từng tệp dữ liệu.");
+			xmlWriter.WriteEndElement();
+			xmlWriter.WriteStartElement("premis", "eventOutcomeInformation", premisNs);
+			xmlWriter.WriteElementString("premis", "eventOutcome", premisNs, "success");
+			xmlWriter.WriteEndElement();
 			xmlWriter.WriteEndElement();
 			xmlWriter.WriteEndElement();
 		}
 	}
 
-	private void AddMetsMapAIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes)
+	private void AddMetsMapAIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
 	{
-		AddMetsMapSIP(archive, pID, profile, hashes);
+		using Stream output = archive.CreateEntry("METS.xml").Open();
+		using XmlWriter w = XmlWriter.Create(output, new XmlWriterSettings { Indent = true, Encoding = Encoding.UTF8 });
+		string fondCode = GetFondCode(profile);
+		WriteAipMetsRoot(w, profile, "urn:" + fondCode + ":uuid:" + Guid.NewGuid().ToString().ToUpperInvariant(), false);
+		string dmdId = NewMetsId();
+		string amdId = NewMetsId();
+		w.WriteStartElement("dmdSec", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", dmdId);
+		w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+		WriteMetadataRef(w, "metadata/descriptive/EAD.xml", "EAD", "text/xml", metadataFileInfo["metadata/descriptive/EAD.xml"]);
+		w.WriteEndElement();
+		w.WriteStartElement("amdSec", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", amdId);
+		w.WriteStartElement("digiprovMD", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", NewMetsId());
+		WriteMetadataRef(w, "metadata/preservation/PREMIS.xml", "PREMIS", "text/xml", metadataFileInfo["metadata/preservation/PREMIS.xml"]);
+		w.WriteEndElement();
+		w.WriteEndElement();
+		w.WriteStartElement("fileSec", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", NewMetsId());
+		w.WriteStartElement("fileGrp", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", NewMetsId());
+		w.WriteAttributeString("USE", "Representations");
+		w.WriteStartElement("file", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", "REP1_METS");
+		w.WriteAttributeString("MIMETYPE", "text/xml");
+		w.WriteStartElement("FLocat", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("LOCTYPE", "URL");
+		w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
+		w.WriteAttributeString("xlink", "href", "http://www.w3.org/1999/xlink", "representations/rep1/METS.xml");
+		w.WriteEndElement(); w.WriteEndElement(); w.WriteEndElement(); w.WriteEndElement();
+		w.WriteStartElement("structMap", "http://www.loc.gov/METS/");
+		w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("TYPE", "PHYSICAL"); w.WriteAttributeString("LABEL", "CSIP");
+		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", profile.ProfileCode);
+		w.WriteAttributeString("DMDID", dmdId); w.WriteAttributeString("ADMID", amdId);
+		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "Representations");
+		w.WriteStartElement("mptr", "http://www.loc.gov/METS/"); w.WriteAttributeString("LOCTYPE", "URL");
+		w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
+		w.WriteAttributeString("xlink", "href", "http://www.w3.org/1999/xlink", "representations/rep1/METS.xml");
+		w.WriteEndElement(); w.WriteEndElement(); w.WriteEndElement(); w.WriteEndElement();
+		w.WriteEndElement();
 	}
 
-	private void AddMetsMapRepAIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes)
+	private void AddMetsMapRepAIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
 	{
-		AddMetsMapRepSIP(archive, pID, profile, hashes);
+		using Stream output = archive.CreateEntry("representations/rep1/METS.xml").Open();
+		using XmlWriter w = XmlWriter.Create(output, new XmlWriterSettings { Indent = true, Encoding = Encoding.UTF8 });
+		WriteAipMetsRoot(w, profile, "urn:" + GetFondCode(profile) + ":rep1:uuid:" + Guid.NewGuid().ToString().ToUpperInvariant(), true);
+		string dmdId = NewMetsId();
+		string amdId = NewMetsId();
+		w.WriteStartElement("dmdSec", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", dmdId); w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+		int documentIndex = 0;
+		foreach (DocumentDTO document in profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)))
+		{
+			documentIndex++;
+			string eadName = GetDocumentEadName(document);
+			string metadataPath = "representations/rep1/metadata/descriptive/" + eadName;
+			WriteMetadataRef(w, "metadata/descriptive/" + eadName, "EAD", "text/xml", metadataFileInfo[metadataPath]);
+		}
+		w.WriteEndElement();
+		w.WriteStartElement("amdSec", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", amdId);
+		w.WriteStartElement("digiprovMD", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId());
+		WriteMetadataRef(w, "metadata/preservation/PREMIS_rep1.xml", "PREMIS", "text/xml", metadataFileInfo["representations/rep1/metadata/preservation/PREMIS_rep1.xml"]);
+		w.WriteEndElement(); w.WriteEndElement();
+		w.WriteStartElement("fileSec", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId());
+		w.WriteStartElement("fileGrp", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("USE", "Data");
+		documentIndex = 0;
+		foreach (DocumentDTO document in profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)))
+		{
+			documentIndex++;
+			string fileId = "FILE" + documentIndex;
+			w.WriteStartElement("file", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", fileId);
+			w.WriteAttributeString("MIMETYPE", GetMimeType(document.SafeFileName));
+			w.WriteAttributeString("SIZE", new FileInfo(document.SourcePdfPath).Length.ToString());
+			w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+			if (hashes.TryGetValue(document.DocumentCode, out string? digest)) { w.WriteAttributeString("CHECKSUM", digest.ToUpperInvariant()); w.WriteAttributeString("CHECKSUMTYPE", "SHA-256"); }
+			w.WriteStartElement("FLocat", "http://www.loc.gov/METS/"); w.WriteAttributeString("LOCTYPE", "URL");
+			w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
+			w.WriteAttributeString("xlink", "href", "http://www.w3.org/1999/xlink", "data/" + document.SafeFileName);
+			w.WriteEndElement(); w.WriteEndElement();
+		}
+		w.WriteEndElement(); w.WriteEndElement();
+		w.WriteStartElement("structMap", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("TYPE", "PHYSICAL");
+		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "rep1"); w.WriteAttributeString("DMDID", dmdId); w.WriteAttributeString("ADMID", amdId);
+		documentIndex = 0;
+		foreach (DocumentDTO document in profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)))
+		{
+			documentIndex++;
+			w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", document.SafeFileName);
+			w.WriteStartElement("fptr", "http://www.loc.gov/METS/"); w.WriteAttributeString("FILEID", "FILE" + documentIndex); w.WriteEndElement();
+			w.WriteEndElement();
+		}
+		w.WriteEndElement(); w.WriteEndElement();
+		w.WriteEndElement();
+	}
+
+	private static string NewMetsId() => "uuid-" + Guid.NewGuid().ToString().ToUpperInvariant();
+
+	private static Stream CreateTrackedOutput(ZipArchive archive, string entryName, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
+	{
+		ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+		return new MetadataTrackingStream(entry.Open(), info => metadataFileInfo[entryName] = info);
+	}
+
+	private static string GetFondCode(ProfileDTO profile)
+	{
+		string? fondCode = profile.Metadata.FirstOrDefault(item => new[] { "fondCode", "fondcode", "maPhong", "MaPhong", "maPhonghs", "FondCodehs" }
+			.Contains(item.Key, StringComparer.OrdinalIgnoreCase)).Value;
+		return string.IsNullOrWhiteSpace(fondCode) ? profile.ProfileCode : fondCode.Trim();
+	}
+
+	private static string GetDocumentEadName(DocumentDTO document)
+	{
+		string ext = Path.GetExtension(document.SafeFileName).ToLowerInvariant();
+		string prefix = new[] { ".mp3", ".mp4", ".avi", ".wav", ".wmv", ".mov" }.Contains(ext) ? "EAD_media_" :
+			new[] { ".jpg", ".jpeg", ".png", ".tiff", ".gif", ".bmp" }.Contains(ext) ? "EAD_pic_" : "EAD_doc_";
+		return prefix + document.SafeFileName + ".xml";
+	}
+
+	private static string GetMimeType(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
+	{
+		".pdf" => "application/pdf", ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".tif" or ".tiff" => "image/tiff",
+		".mp3" => "audio/mpeg", ".wav" => "audio/wav", ".mp4" => "video/mp4", ".avi" => "video/x-msvideo", ".mov" => "video/quicktime",
+		_ => "application/octet-stream"
+	};
+
+	private static void WriteAipMetsRoot(XmlWriter w, ProfileDTO profile, string objId, bool representation)
+	{
+		const string mets = "http://www.loc.gov/METS/";
+		const string xsi = "http://www.w3.org/2001/XMLSchema-instance";
+		const string xlink = "http://www.w3.org/1999/xlink";
+		const string csip = "https://DILCIS.eu/XML/METS/CSIPExtensionMETS";
+		w.WriteStartDocument(); w.WriteStartElement("mets", mets);
+		w.WriteAttributeString("xmlns", "xsi", null, xsi); w.WriteAttributeString("xmlns", "xlink", null, xlink); w.WriteAttributeString("xmlns", "csip", null, csip);
+		string schemaFolder = representation ? "../../schemas/" : "schemas/";
+		w.WriteAttributeString("xsi", "schemaLocation", xsi, mets + " " + schemaFolder + "METS.xsd " + xlink + " " + schemaFolder + "xlink.xsd");
+		w.WriteAttributeString("OBJID", objId); w.WriteAttributeString("LABEL", profile.ProfileCode); w.WriteAttributeString("TYPE", "Mixed");
+		w.WriteAttributeString("csip", "CONTENTINFORMATIONTYPE", csip, "MIXED");
+		w.WriteAttributeString("PROFILE", "https://earkcsip.dilcis.eu/profile/E-ARK-CSIP.xml");
+		w.WriteStartElement("metsHdr", mets); w.WriteAttributeString("CREATEDATE", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+		w.WriteAttributeString("LASTMODDATE", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz")); w.WriteAttributeString("RECORDSTATUS", "NEW");
+		w.WriteStartElement("csip", "OAISPACKAGETYPE", csip); w.WriteString("AIP"); w.WriteEndElement();
+		w.WriteStartElement("agent", mets); w.WriteAttributeString("ROLE", "CREATOR"); w.WriteAttributeString("TYPE", "OTHER"); w.WriteAttributeString("OTHERTYPE", "SOFTWARE");
+		w.WriteElementString("name", mets, "AXE Packaging Tool");
+		w.WriteStartElement("note", mets); w.WriteAttributeString("csip", "NOTETYPE", csip, "SOFTWARE VERSION"); w.WriteString(Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown"); w.WriteEndElement();
+		w.WriteEndElement(); w.WriteEndElement();
+	}
+
+	private static void WriteMetadataRef(XmlWriter w, string href, string otherMdType, string mimeType, (long Size, string Checksum) fileInfo)
+	{
+		const string mets = "http://www.loc.gov/METS/"; const string xlink = "http://www.w3.org/1999/xlink";
+		if (fileInfo.Size <= 0 || string.IsNullOrWhiteSpace(fileInfo.Checksum))
+			throw new InvalidDataException("Không thể tạo mdRef vì tệp metadata bị thiếu hoặc rỗng: " + href);
+		w.WriteStartElement("mdRef", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LOCTYPE", "URL"); w.WriteAttributeString("MDTYPE", "OTHER");
+		w.WriteAttributeString("OTHERMDTYPE", otherMdType); w.WriteAttributeString("MDTYPEVERSION", "1.0");
+		w.WriteAttributeString("xlink", "type", xlink, "simple"); w.WriteAttributeString("xlink", "href", xlink, href); w.WriteAttributeString("MIMETYPE", mimeType);
+		w.WriteAttributeString("SIZE", fileInfo.Size.ToString()); w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+		w.WriteAttributeString("CHECKSUMTYPE", "SHA-256");
+		w.WriteAttributeString("CHECKSUM", fileInfo.Checksum);
+		w.WriteEndElement();
+	}
+
+	private sealed class MetadataTrackingStream : Stream
+	{
+		private readonly Stream _destination;
+		private readonly MemoryStream _buffer = new MemoryStream();
+		private readonly Action<(long Size, string Checksum)> _onComplete;
+		private bool _disposed;
+
+		public MetadataTrackingStream(Stream destination, Action<(long Size, string Checksum)> onComplete)
+		{
+			_destination = destination;
+			_onComplete = onComplete;
+		}
+
+		public override bool CanRead => false;
+		public override bool CanSeek => false;
+		public override bool CanWrite => !_disposed;
+		public override long Length => _buffer.Length;
+		public override long Position { get => _buffer.Position; set => throw new NotSupportedException(); }
+		public override void Flush() => _destination.Flush();
+		public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+
+		public override void Write(byte[] buffer, int offset, int count)
+		{
+			_destination.Write(buffer, offset, count);
+			_buffer.Write(buffer, offset, count);
+		}
+
+		public override void Write(ReadOnlySpan<byte> buffer)
+		{
+			_destination.Write(buffer);
+			_buffer.Write(buffer);
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (!_disposed && disposing)
+			{
+				_destination.Dispose();
+				byte[] bytes = _buffer.ToArray();
+				using SHA256 sha = SHA256.Create();
+				_onComplete((bytes.LongLength, Convert.ToHexString(sha.ComputeHash(bytes))));
+				_buffer.Dispose();
+				_disposed = true;
+			}
+			base.Dispose(disposing);
+		}
 	}
 
 	private void AddMetsMapDIP(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes)
