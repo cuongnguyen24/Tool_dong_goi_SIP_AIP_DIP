@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EAD3 Schema stub — AXE-SoHoa Packaging Tool
+  Full schema: http://ead3.archivists.org/schema/ead3.xsd
+  This stub is shipped so the ZIP package contains a /schemas/EAD.xsd entry.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ead="http://ead3.archivists.org/schema/"
+           targetNamespace="http://ead3.archivists.org/schema/"
+           elementFormDefault="qualified">
+  <!-- Refer to http://ead3.archivists.org/schema/ead3.xsd for the full schema -->
+  <xs:element name="ead" type="ead:eadType"/>
+  <xs:complexType name="eadType">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+    </xs:sequence>
+    <xs:anyAttribute processContents="lax"/>
+  </xs:complexType>
+</xs:schema>

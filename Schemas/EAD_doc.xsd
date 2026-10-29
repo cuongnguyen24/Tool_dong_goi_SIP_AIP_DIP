@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EAD3 stub cho tài liệu văn bản hành chính — AXE-SoHoa Packaging Tool -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ead="http://ead3.archivists.org/schema/"
+           targetNamespace="http://ead3.archivists.org/schema/"
+           elementFormDefault="qualified">
+  <xs:element name="ead" type="ead:eadType"/>
+  <xs:complexType name="eadType">
+    <xs:sequence>
+      <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+    </xs:sequence>
+    <xs:anyAttribute processContents="lax"/>
+  </xs:complexType>
+</xs:schema>

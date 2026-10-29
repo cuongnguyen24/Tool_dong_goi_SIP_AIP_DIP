@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>AXE.PackagingTool</AssemblyName>
+    <RootNamespace>AXE.PackagingTool</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+    <Company>AXE-SoHoa</Company>
+    <Product>AXE Packaging Tool</Product>
+    <Description>Đóng gói tài liệu lưu trữ số theo TT05/2025/TT-BNV</Description>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
+  </ItemGroup>
+
+  <!-- XSD Schemas nhúng sẵn — không cần người dùng cung cấp -->
+  <ItemGroup>
+    <EmbeddedResource Include="Schemas\METS.xsd" />
+    <EmbeddedResource Include="Schemas\EAD.xsd" />
+    <EmbeddedResource Include="Schemas\EAD_doc.xsd" />
+    <EmbeddedResource Include="Schemas\EAD_pic.xsd" />
+    <EmbeddedResource Include="Schemas\EAD_media.xsd" />
+  </ItemGroup>
+
+</Project>

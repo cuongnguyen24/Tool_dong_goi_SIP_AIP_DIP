@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35931.197
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AXE.PackagingTool", "AXE.PackagingTool.csproj", "{E36AC1A7-CF39-FAC8-8EAA-C0AF4ED06046}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E36AC1A7-CF39-FAC8-8EAA-C0AF4ED06046}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E36AC1A7-CF39-FAC8-8EAA-C0AF4ED06046}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E36AC1A7-CF39-FAC8-8EAA-C0AF4ED06046}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E36AC1A7-CF39-FAC8-8EAA-C0AF4ED06046}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B76FA28F-6ABD-4880-A33D-1DA3C26AC0FC}
+	EndGlobalSection
+EndGlobal
