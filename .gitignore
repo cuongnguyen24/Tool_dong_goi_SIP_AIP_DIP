@@ -1,4 +1,4 @@
-# Build output
+# .NET build output
 bin/
 obj/
 [Dd]ebug/
@@ -12,6 +12,12 @@ obj/
 *.userosscache
 *.sln.docstates
 
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
 # Test and coverage output
 TestResults/
 coverage/
@@ -22,9 +28,7 @@ coverage/
 *.nupkg
 *.snupkg
 
-# OS-generated files
+# Operating system files
 Thumbs.db
 Desktop.ini
 .DS_Store
-
-*.zip

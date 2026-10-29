@@ -1,33 +1,46 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AXE.PackagingTool</AssemblyName>
-    <RootNamespace>AXE.PackagingTool</RootNamespace>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyVersion>1.0.0</AssemblyVersion>
-    <FileVersion>1.0.0</FileVersion>
-    <Company>AXE-SoHoa</Company>
-    <Product>AXE Packaging Tool</Product>
-    <Description>Đóng gói tài liệu lưu trữ số theo TT05/2025/TT-BNV</Description>
-    <LangVersion>latest</LangVersion>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>True</UseWPF>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>True</UseWindowsForms>
+    <GenerateTargetFrameworkAttribute>False</GenerateTargetFrameworkAttribute>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
-
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RootNamespace />
+    <UseBundledDependencies Condition="'$(UseBundledDependencies)' == ''">true</UseBundledDependencies>
+  </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="ClosedXML" Version="0.102.3" />
+    <None Remove="AXE.PackagingTool.Schemas.METS.xsd" />
+    <None Remove="AXE.PackagingTool.Schemas.EAD.xsd" />
+    <None Remove="AXE.PackagingTool.Schemas.EAD_doc.xsd" />
+    <None Remove="AXE.PackagingTool.Schemas.EAD_pic.xsd" />
+    <None Remove="AXE.PackagingTool.Schemas.EAD_media.xsd" />
+    <EmbeddedResource Include="AXE.PackagingTool.Schemas.METS.xsd" LogicalName="AXE.PackagingTool.Schemas.METS.xsd" />
+    <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD.xsd" />
+    <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD_doc.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD_doc.xsd" />
+    <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD_pic.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD_pic.xsd" />
+    <EmbeddedResource Include="AXE.PackagingTool.Schemas.EAD_media.xsd" LogicalName="AXE.PackagingTool.Schemas.EAD_media.xsd" />
   </ItemGroup>
-
-  <!-- XSD Schemas nhúng sẵn — không cần người dùng cung cấp -->
   <ItemGroup>
-    <EmbeddedResource Include="Schemas\METS.xsd" />
-    <EmbeddedResource Include="Schemas\EAD.xsd" />
-    <EmbeddedResource Include="Schemas\EAD_doc.xsd" />
-    <EmbeddedResource Include="Schemas\EAD_pic.xsd" />
-    <EmbeddedResource Include="Schemas\EAD_media.xsd" />
+    <PackageReference Include="ClosedXML" Version="0.102.3" Condition="'$(UseBundledDependencies)' != 'true'" />
+    <PackageReference Include="ExcelDataReader" Version="3.8.0" Condition="'$(UseBundledDependencies)' != 'true'" />
+    <PackageReference Include="ExcelDataReader.DataSet" Version="3.8.0" Condition="'$(UseBundledDependencies)' != 'true'" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="10.0.9" Condition="'$(UseBundledDependencies)' != 'true'" />
+    <Reference Include="lib\*.dll" Condition="'$(UseBundledDependencies)' == 'true'" />
   </ItemGroup>
-
+  <ItemGroup>
+    <Page Remove="AXE.PackagingTool.App.xaml" />
+    <ApplicationDefinition Include="AXE.PackagingTool.App.xaml" />
+    <None Include="App.config" CopyToOutputDirectory="PreserveNewest" TargetPath="AXE.PackagingTool.dll.config" />
+    <Content Include="Metadata\**;MauExcel\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
