@@ -800,7 +800,8 @@ public class MainViewModel : INotifyPropertyChanged
 				continue;
 			}
 			progress.Report((idx * 100 / total, $"Đang xử lý: {profile.ProfileCode} ({idx + 1}/{total})"));
-			outputFiles.Add(await Task.Run(() => builder.Build(profile, CurrentPackageType, OutputFolderPath)));
+			int submissionOrdinal = packagedCount + 1;
+			outputFiles.Add(await Task.Run(() => builder.Build(profile, CurrentPackageType, OutputFolderPath, submissionOrdinal)));
 			idx++;
 			int currentCount;
 			packagedCount = (currentCount = packagedCount + 1);
