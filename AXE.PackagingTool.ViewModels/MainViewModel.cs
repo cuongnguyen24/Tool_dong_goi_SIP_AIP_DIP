@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -791,6 +792,7 @@ public class MainViewModel : INotifyPropertyChanged
 		int total = list.Count;
 		int idx = 0;
 		int packagedCount = 0;
+		List<string[]> sipLookupRows = new List<string[]>();
 		foreach (ProfileDTO profile in list)
 		{
 			ct.ThrowIfCancellationRequested();
@@ -801,7 +803,26 @@ public class MainViewModel : INotifyPropertyChanged
 			}
 			progress.Report((idx * 100 / total, $"Đang xử lý: {profile.ProfileCode} ({idx + 1}/{total})"));
 			int submissionOrdinal = packagedCount + 1;
-			outputFiles.Add(await Task.Run(() => builder.Build(profile, CurrentPackageType, OutputFolderPath, submissionOrdinal)));
+			string packagePath = await Task.Run(() => builder.Build(profile, CurrentPackageType, OutputFolderPath, submissionOrdinal));
+			outputFiles.Add(packagePath);
+			if (CurrentPackageType == PackageType.SIP && !string.IsNullOrWhiteSpace(packagePath))
+			{
+				string zipName = Path.GetFileName(packagePath);
+				string packageStem = Path.GetFileNameWithoutExtension(zipName);
+				int separator = packageStem.IndexOf('_');
+				string objId = separator >= 0 ? packageStem[(separator + 1)..] : "";
+				string sourceFolders = string.Join("; ", profile.Documents
+					.Where(d => d.IsPdfValid && !string.IsNullOrWhiteSpace(d.SourcePdfPath))
+					.Select(d => Path.GetDirectoryName(d.SourcePdfPath) ?? "")
+					.Where(p => !string.IsNullOrWhiteSpace(p))
+					.Distinct(StringComparer.OrdinalIgnoreCase));
+				string title = profile.Metadata.FirstOrDefault(item => item.Key.Equals("title", StringComparison.OrdinalIgnoreCase)).Value ?? "";
+				sipLookupRows.Add(new[]
+				{
+					submissionOrdinal.ToString(), zipName, objId, profile.ProfileCode, title, sourceFolders,
+					profile.Documents.Count(d => d.IsPdfValid && !string.IsNullOrWhiteSpace(d.SourcePdfPath)).ToString()
+				});
+			}
 			idx++;
 			int currentCount;
 			packagedCount = (currentCount = packagedCount + 1);
@@ -811,7 +832,25 @@ public class MainViewModel : INotifyPropertyChanged
 			});
 			progress.Report((idx * 100 / total, $"Hoàn thành {idx}/{total} gói"));
 		}
+		if (CurrentPackageType == PackageType.SIP && sipLookupRows.Count > 0)
+		{
+			string lookupPath = Path.Combine(OutputFolderPath, "SIP_TraCuu_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".csv");
+			string[] headers = { "STT hồ sơ lần nộp", "Tên ZIP", "OBJID gói SIP", "Mã hồ sơ", "Tiêu đề hồ sơ", "Thư mục tài liệu nguồn", "Số tài liệu" };
+			StringBuilder csv = new StringBuilder();
+			csv.AppendLine(string.Join(",", headers.Select(EscapeCsvField)));
+			foreach (string[] row in sipLookupRows)
+				csv.AppendLine(string.Join(",", row.Select(EscapeCsvField)));
+			File.WriteAllText(lookupPath, csv.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+			Log("✅ Đã tạo bảng tra cứu ZIP SIP: " + lookupPath, LogLevel.Success);
+		}
 		return outputFiles;
+	}
+
+	private static string EscapeCsvField(string value)
+	{
+		if (value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0)
+			return "\"" + value.Replace("\"", "\"\"") + "\"";
+		return value;
 	}
 
 	private bool CanRun()

@@ -131,13 +131,13 @@ public class DynamicPackageBuilder
 					break;
 				case "AIP":
 					AddPremisMetadataAIP(zipArchive, text3, profile, dictionary, text, metadataFileInfo);
-					AddMetsMapAIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
 					AddMetsMapRepAIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
+					AddMetsMapAIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
 					break;
 				case "DIP":
 					AddPremisMetadataAIP(zipArchive, text3, profile, dictionary, text, metadataFileInfo);
-					AddMetsMapDIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
 					AddMetsMapRepDIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
+					AddMetsMapDIP(zipArchive, text3, profile, dictionary, metadataFileInfo);
 					break;
 				}
 			}
@@ -172,11 +172,16 @@ public class DynamicPackageBuilder
 		xmlWriter.WriteAttributeString("xsi", "noNamespaceSchemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "../../schemas/EAD.xsd");
 		string name = type + "_ProfileFields";
 		(string XmlField, string SourceField)[] fields = GetConfiguredFields(name);
+		string packagedDocumentCount = profile.Documents
+			.Count(d => d.IsPdfValid && !string.IsNullOrWhiteSpace(d.SourcePdfPath))
+			.ToString();
 		if (fields.Length > 0)
 		{
 			foreach ((string text2, string field) in fields)
 			{
-				string value = GetMetaByConfigName(profile.Metadata, field);
+				string value = text2.Equals("totalDoc", StringComparison.OrdinalIgnoreCase)
+					? packagedDocumentCount
+					: GetMetaByConfigName(profile.Metadata, field);
 				if (string.IsNullOrEmpty(value) && text2.Equals("title", StringComparison.OrdinalIgnoreCase))
 				{
 					value = "Hồ sơ " + profile.ProfileCode;
@@ -184,10 +189,6 @@ public class DynamicPackageBuilder
 					if (string.IsNullOrEmpty(value) && (text2.Equals("fileCode", StringComparison.OrdinalIgnoreCase) || text2.Equals("arcFileCode", StringComparison.OrdinalIgnoreCase)))
 				{
 					value = profile.ProfileCode;
-				}
-					if (string.IsNullOrEmpty(value) && text2.Equals("totalDoc", StringComparison.OrdinalIgnoreCase))
-				{
-					value = profile.Documents.Count((DocumentDTO d) => d.IsPdfValid).ToString();
 				}
 				if (string.IsNullOrEmpty(value) && text2.Equals("maintenance", StringComparison.OrdinalIgnoreCase))
 				{
@@ -206,7 +207,10 @@ public class DynamicPackageBuilder
 				{
 					text3 = text3.Substring(0, text3.Length - 2);
 				}
-				xmlWriter.WriteElementString(text3, Tt05MetadataConverter.Convert(text3, item2.Value));
+				string value = text3.Equals("totalDoc", StringComparison.OrdinalIgnoreCase)
+					? packagedDocumentCount
+					: item2.Value;
+				xmlWriter.WriteElementString(text3, Tt05MetadataConverter.Convert(text3, value));
 			}
 		}
 		xmlWriter.WriteEndElement();
@@ -683,7 +687,7 @@ public class DynamicPackageBuilder
 
 	private void AddMetsMapPackage(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes, Dictionary<string, (long Size, string Checksum)> metadataFileInfo, string packageType)
 	{
-		using Stream output = archive.CreateEntry("METS.xml").Open();
+		using Stream output = CreateTrackedOutput(archive, "METS.xml", metadataFileInfo);
 		using XmlWriter w = XmlWriter.Create(output, new XmlWriterSettings { Indent = true, Encoding = Encoding.UTF8 });
 		string packageId = packageType == "AIP"
 			? "urn:" + GetFondCode(profile) + ":uuid:" + Guid.NewGuid().ToString().ToUpperInvariant()
@@ -706,12 +710,38 @@ public class DynamicPackageBuilder
 		w.WriteStartElement("fileSec", "http://www.loc.gov/METS/");
 		w.WriteAttributeString("ID", NewMetsId());
 		w.WriteStartElement("fileGrp", "http://www.loc.gov/METS/");
+		string schemaGroupId = NewMetsId();
+		w.WriteAttributeString("ID", schemaGroupId);
+		w.WriteAttributeString("USE", "Schemas");
+		foreach (string schemaPath in metadataFileInfo.Keys.Where(p => p.StartsWith("schemas/", StringComparison.OrdinalIgnoreCase)).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+		{
+			var schemaInfo = metadataFileInfo[schemaPath];
+			w.WriteStartElement("file", "http://www.loc.gov/METS/");
+			w.WriteAttributeString("ID", NewFileId());
+			w.WriteAttributeString("MIMETYPE", "application/octet-stream");
+			w.WriteAttributeString("SIZE", schemaInfo.Size.ToString());
+			w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+			w.WriteAttributeString("CHECKSUM", schemaInfo.Checksum);
+			w.WriteAttributeString("CHECKSUMTYPE", "SHA-256");
+			w.WriteStartElement("FLocat", "http://www.loc.gov/METS/");
+			w.WriteAttributeString("LOCTYPE", "URL");
+			w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
+			w.WriteAttributeString("xlink", "href", "http://www.w3.org/1999/xlink", schemaPath);
+			w.WriteEndElement(); w.WriteEndElement();
+		}
+		w.WriteEndElement();
+		w.WriteStartElement("fileGrp", "http://www.loc.gov/METS/");
 		string representationGroupId = NewMetsId();
 		w.WriteAttributeString("ID", representationGroupId);
-		w.WriteAttributeString("USE", "Representations");
+		w.WriteAttributeString("USE", "Representations/rep1");
 		w.WriteStartElement("file", "http://www.loc.gov/METS/");
-		w.WriteAttributeString("ID", "REP1_METS");
-		w.WriteAttributeString("MIMETYPE", "text/xml");
+		w.WriteAttributeString("ID", NewFileId());
+		w.WriteAttributeString("MIMETYPE", "application/xml");
+		var representationInfo = metadataFileInfo["representations/rep1/METS.xml"];
+		w.WriteAttributeString("SIZE", representationInfo.Size.ToString());
+		w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
+		w.WriteAttributeString("CHECKSUM", representationInfo.Checksum);
+		w.WriteAttributeString("CHECKSUMTYPE", "SHA-256");
 		w.WriteStartElement("FLocat", "http://www.loc.gov/METS/");
 		w.WriteAttributeString("LOCTYPE", "URL");
 		w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
@@ -722,6 +752,8 @@ public class DynamicPackageBuilder
 		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", profile.ProfileCode);
 		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "Metadata");
 		w.WriteAttributeString("DMDID", dmdId); w.WriteAttributeString("ADMID", amdId); w.WriteEndElement();
+		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "Schemas");
+		w.WriteStartElement("fptr", "http://www.loc.gov/METS/"); w.WriteAttributeString("FILEID", schemaGroupId); w.WriteEndElement(); w.WriteEndElement();
 		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "Representations/rep1");
 		w.WriteStartElement("mptr", "http://www.loc.gov/METS/"); w.WriteAttributeString("LOCTYPE", "URL");
 		w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
@@ -736,54 +768,69 @@ public class DynamicPackageBuilder
 
 	private void AddMetsMapRepPackage(ZipArchive archive, string pID, ProfileDTO profile, Dictionary<string, string> hashes, Dictionary<string, (long Size, string Checksum)> metadataFileInfo, string packageType)
 	{
-		using Stream output = archive.CreateEntry("representations/rep1/METS.xml").Open();
+		using Stream output = CreateTrackedOutput(archive, "representations/rep1/METS.xml", metadataFileInfo);
 		using XmlWriter w = XmlWriter.Create(output, new XmlWriterSettings { Indent = true, Encoding = Encoding.UTF8 });
-		string representationId = packageType == "AIP"
-			? "urn:" + GetFondCode(profile) + ":rep1:uuid:" + Guid.NewGuid().ToString().ToUpperInvariant()
-			: "uuid-" + Guid.NewGuid().ToString().ToUpperInvariant();
+		const string mets = "http://www.loc.gov/METS/";
+		const string xlink = "http://www.w3.org/1999/xlink";
+		string representationId = NewMetsId();
 		WritePackageMetsRoot(w, profile, representationId, true, packageType);
-		string dmdId = NewMetsId();
-		string amdId = NewMetsId();
-		w.WriteStartElement("dmdSec", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", dmdId); w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
-		int documentIndex = 0;
-		foreach (DocumentDTO document in profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)))
+		List<string> documentDmdIds = new List<string>();
+		List<string> documentFileIds = new List<string>();
+		List<DocumentDTO> documents = profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)).ToList();
+		foreach (DocumentDTO document in documents)
 		{
-			documentIndex++;
 			string eadName = GetDocumentEadName(document);
 			string metadataPath = "representations/rep1/metadata/descriptive/" + eadName;
+			string documentDmdId = NewMetsId();
+			documentDmdIds.Add(documentDmdId);
+			w.WriteStartElement("dmdSec", mets);
+			w.WriteAttributeString("ID", documentDmdId);
+			w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
 			WriteMetadataRef(w, "metadata/descriptive/" + eadName, "EAD", "text/xml", metadataFileInfo[metadataPath]);
+			w.WriteEndElement();
 		}
-		w.WriteEndElement();
-		w.WriteStartElement("amdSec", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", amdId);
-		w.WriteStartElement("digiprovMD", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId());
-		WriteMetadataRef(w, "metadata/preservation/PREMIS_rep1.xml", "PREMIS", "text/xml", metadataFileInfo["representations/rep1/metadata/preservation/PREMIS_rep1.xml"]);
+
+		string amdId = NewMetsId();
+		w.WriteStartElement("amdSec", mets); w.WriteAttributeString("ID", amdId);
+		w.WriteStartElement("digiprovMD", mets); w.WriteAttributeString("ID", NewMetsId());
+		string premisRefId = WriteMetadataRef(w, "metadata/preservation/PREMIS_rep1.xml", "PREMIS", "text/xml", metadataFileInfo["representations/rep1/metadata/preservation/PREMIS_rep1.xml"]);
 		w.WriteEndElement(); w.WriteEndElement();
-		w.WriteStartElement("fileSec", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId());
-		w.WriteStartElement("fileGrp", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("USE", "Data");
-		documentIndex = 0;
-		foreach (DocumentDTO document in profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)))
+
+		w.WriteStartElement("fileSec", mets); w.WriteAttributeString("ID", NewMetsId());
+		w.WriteStartElement("fileGrp", mets);
+		string dataGroupId = NewMetsId();
+		w.WriteAttributeString("ID", dataGroupId); w.WriteAttributeString("USE", "Data");
+		foreach (DocumentDTO document in documents)
 		{
-			documentIndex++;
-			string fileId = "FILE" + documentIndex;
-			w.WriteStartElement("file", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", fileId);
+			string fileId = NewFileId();
+			documentFileIds.Add(fileId);
+			w.WriteStartElement("file", mets); w.WriteAttributeString("ID", fileId);
 			w.WriteAttributeString("MIMETYPE", GetMimeType(document.SafeFileName));
 			w.WriteAttributeString("SIZE", new FileInfo(document.SourcePdfPath).Length.ToString());
 			w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
-			if (hashes.TryGetValue(document.DocumentCode, out string? digest)) { w.WriteAttributeString("CHECKSUM", digest.ToUpperInvariant()); w.WriteAttributeString("CHECKSUMTYPE", "SHA-256"); }
-			w.WriteStartElement("FLocat", "http://www.loc.gov/METS/"); w.WriteAttributeString("LOCTYPE", "URL");
-			w.WriteAttributeString("xlink", "type", "http://www.w3.org/1999/xlink", "simple");
-			w.WriteAttributeString("xlink", "href", "http://www.w3.org/1999/xlink", "data/" + document.SafeFileName);
+			if (!hashes.TryGetValue(document.DocumentCode, out string? digest) || string.IsNullOrWhiteSpace(digest))
+				throw new InvalidDataException("Thiếu checksum tài liệu " + document.DocumentCode);
+			w.WriteAttributeString("CHECKSUM", digest.ToUpperInvariant()); w.WriteAttributeString("CHECKSUMTYPE", "SHA-256");
+			w.WriteStartElement("FLocat", mets); w.WriteAttributeString("LOCTYPE", "URL");
+			w.WriteAttributeString("xlink", "type", xlink, "simple");
+			w.WriteAttributeString("xlink", "href", xlink, "data/" + document.SafeFileName);
 			w.WriteEndElement(); w.WriteEndElement();
 		}
 		w.WriteEndElement(); w.WriteEndElement();
-		w.WriteStartElement("structMap", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("TYPE", "PHYSICAL");
-		w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "rep1"); w.WriteAttributeString("DMDID", dmdId); w.WriteAttributeString("ADMID", amdId);
-		documentIndex = 0;
-		foreach (DocumentDTO document in profile.Documents.Where(d => d.IsPdfValid && !string.IsNullOrEmpty(d.SourcePdfPath)))
+
+		w.WriteStartElement("structMap", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("TYPE", "PHYSICAL"); w.WriteAttributeString("LABEL", "CSIP");
+		w.WriteStartElement("div", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "rep1");
+		w.WriteStartElement("div", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "Metadata");
+		w.WriteStartElement("fptr", mets); w.WriteAttributeString("FILEID", premisRefId); w.WriteEndElement(); w.WriteEndElement();
+		w.WriteStartElement("div", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "Data");
+		w.WriteStartElement("fptr", mets); w.WriteAttributeString("FILEID", dataGroupId); w.WriteEndElement(); w.WriteEndElement();
+		w.WriteStartElement("div", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "MetadataLink");
+		for (int i = 0; i < documents.Count; i++)
 		{
-			documentIndex++;
-			w.WriteStartElement("div", "http://www.loc.gov/METS/"); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", document.SafeFileName);
-			w.WriteStartElement("fptr", "http://www.loc.gov/METS/"); w.WriteAttributeString("FILEID", "FILE" + documentIndex); w.WriteEndElement();
+			w.WriteStartElement("div", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LABEL", "MetadataLink/File");
+			w.WriteAttributeString("DMDID", documentDmdIds[i]);
+			w.WriteAttributeString("ADMID", amdId);
+			w.WriteStartElement("fptr", mets); w.WriteAttributeString("FILEID", documentFileIds[i]); w.WriteEndElement();
 			w.WriteEndElement();
 		}
 		w.WriteEndElement(); w.WriteEndElement();
@@ -791,6 +838,8 @@ public class DynamicPackageBuilder
 	}
 
 	private static string NewMetsId() => "uuid-" + Guid.NewGuid().ToString().ToUpperInvariant();
+
+	private static string NewFileId() => "ID-" + Guid.NewGuid().ToString().ToUpperInvariant();
 
 	private static Stream CreateTrackedOutput(ZipArchive archive, string entryName, Dictionary<string, (long Size, string Checksum)> metadataFileInfo)
 	{
@@ -842,18 +891,20 @@ public class DynamicPackageBuilder
 		w.WriteEndElement(); w.WriteEndElement();
 	}
 
-	private static void WriteMetadataRef(XmlWriter w, string href, string otherMdType, string mimeType, (long Size, string Checksum) fileInfo)
+	private static string WriteMetadataRef(XmlWriter w, string href, string otherMdType, string mimeType, (long Size, string Checksum) fileInfo)
 	{
 		const string mets = "http://www.loc.gov/METS/"; const string xlink = "http://www.w3.org/1999/xlink";
 		if (fileInfo.Size <= 0 || string.IsNullOrWhiteSpace(fileInfo.Checksum))
 			throw new InvalidDataException("Không thể tạo mdRef vì tệp metadata bị thiếu hoặc rỗng: " + href);
-		w.WriteStartElement("mdRef", mets); w.WriteAttributeString("ID", NewMetsId()); w.WriteAttributeString("LOCTYPE", "URL"); w.WriteAttributeString("MDTYPE", "OTHER");
+		string id = NewMetsId();
+		w.WriteStartElement("mdRef", mets); w.WriteAttributeString("ID", id); w.WriteAttributeString("LOCTYPE", "URL"); w.WriteAttributeString("MDTYPE", "OTHER");
 		w.WriteAttributeString("OTHERMDTYPE", otherMdType); w.WriteAttributeString("MDTYPEVERSION", "1.0");
 		w.WriteAttributeString("xlink", "type", xlink, "simple"); w.WriteAttributeString("xlink", "href", xlink, href); w.WriteAttributeString("MIMETYPE", mimeType);
 		w.WriteAttributeString("SIZE", fileInfo.Size.ToString()); w.WriteAttributeString("CREATED", DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz"));
 		w.WriteAttributeString("CHECKSUMTYPE", "SHA-256");
 		w.WriteAttributeString("CHECKSUM", fileInfo.Checksum);
 		w.WriteEndElement();
+		return id;
 	}
 
 	private sealed class MetadataTrackingStream : Stream

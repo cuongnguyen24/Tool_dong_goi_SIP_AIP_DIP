@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TT05 package-local declarations for the CSIP METS extension attributes. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="https://DILCIS.eu/XML/METS/CSIPExtensionMETS"
+           xmlns:csip="https://DILCIS.eu/XML/METS/CSIPExtensionMETS"
+           elementFormDefault="qualified" attributeFormDefault="qualified">
+  <xs:simpleType name="contentInformationType">
+    <xs:restriction base="xs:string"><xs:enumeration value="MIXED"/></xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="oaisPackageType">
+    <xs:restriction base="xs:string"><xs:enumeration value="SIP"/><xs:enumeration value="AIP"/><xs:enumeration value="DIP"/></xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="noteType">
+    <xs:restriction base="xs:string"><xs:enumeration value="SOFTWARE VERSION"/></xs:restriction>
+  </xs:simpleType>
+  <xs:attribute name="CONTENTINFORMATIONTYPE" type="csip:contentInformationType"/>
+  <xs:attribute name="OAISPACKAGETYPE" type="csip:oaisPackageType"/>
+  <xs:attribute name="NOTETYPE" type="csip:noteType"/>
+</xs:schema>
